@@ -188,7 +188,7 @@ def _make_nets(variables, config, net_assignments):
 
     nets = {key: net}
     keys = [key]
-    subsets = [range(len(variables))]
+    subsets = [range(len(variables))] # 要优化的optimizee的变量id
   else:
     nets = {}
     keys = []
@@ -197,15 +197,16 @@ def _make_nets(variables, config, net_assignments):
       for key, names in net_assignments:
         if key in nets:
           raise ValueError("Repeated netid in net_assigments.")
-        nets[key] = networks.factory(**config[key])
-        subset = [name_to_index[name] for name in names]
+        nets[key] = networks.factory(**config[key]) # key = such as : cw,adam,conv,fc,..
+        #nets[key] = CoordinateWiseDeepLSTM(**config['cw'])?
+        subset = [name_to_index[name] for name in names] 
         keys.append(key)
         subsets.append(subset)
         print("Net: {}, Subset: {}".format(key, subset))
 
   # subsets should be a list of disjoint subsets (as lists!) of the variables
   # and nets should be a list of networks to apply to each subset.
-  return nets, keys, subsets
+  return nets, keys, subsets # nets可能为coordnatewise,adam subsets是变量id
 
 
 class MetaOptimizer(object):
@@ -296,12 +297,27 @@ class MetaOptimizer(object):
 
     # Create hidden state for each subset of variables.
     state = []
+    ##为optimizee中所有变量划分出的每个子集（不是每个变量*）：
+    ##构建一个隐状态state集，并分配一个net（CoordinateWiseDeepLSTM网络）
+                              #"layers": (20, 20),
+                              #     "preprocess_name": "LogAndSign",
+                              #    "preprocess_options": {"k": 5},
+                              #    "scale": 0.01,
+    #然后在这个隐状态集， 
+    #对变量子集里的所有索引j对应的变量进行_nested_variable([],name,false)操作
+    #这里的_nested_variable([])即对列表里的所有
+    # net.initial_state_for_inputs(x[j], dtype=tf.float32)
+    # 进行 tf.Variable 操作
+    # net.initial_state_for_inputs(x[j], dtype=tf.float32)
+    # 这里的cw的initial_state_for_inputs 
+    # 即 为 变量x[j]做snt.DeepRNN.initial_state(batch_size, **kwargs)
+  
     with tf.name_scope("states"):
       for i, (subset, key) in enumerate(zip(subsets, net_keys)):
         net = nets[key]
         with tf.name_scope("state_{}".format(i)):
           state.append(_nested_variable(
-              [net.initial_state_for_inputs(x[j], dtype=tf.float32)
+              [net.initial_state_for_inputs(x[j], dtype=tf.float32) #x[j]，找到j索引对应的变量
                for j in subset],
               name="state", trainable=False))
 
